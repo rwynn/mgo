@@ -59,6 +59,10 @@ type ChangeStreamOptions struct {
 
 	// Collation specifies the way the server should collate returned data.
 	//TODO Collation *Collation
+
+	// Specify StartAtOperationTime to open the cursor at a particular point in time.
+	// If the specified starting point is in the past, it must be in the time range of the oplog.
+	StartAtOperationTime bson.MongoTimestamp
 }
 
 var errMissingResumeToken = errors.New("resume token missing from result")
@@ -315,8 +319,13 @@ func constructChangeStreamPipeline(pipeline interface{},
 	if options.FullDocument != "" {
 		changeStreamStageOptions["fullDocument"] = options.FullDocument
 	}
+	// resumeAfter and startAtOperationTime are mutually exclusive
 	if options.ResumeAfter != nil {
 		changeStreamStageOptions["resumeAfter"] = options.ResumeAfter
+	} else if options.StartAtOperationTime > 0 {
+		changeStreamStageOptions["startAtOperationTime"] = options.StartAtOperationTime
+		// reset StartAtOperationTime to ensure the resume token is used from now on
+		options.StartAtOperationTime = bson.MongoTimestamp(0)
 	}
 	if domain == changeDomainCluster {
 		changeStreamStageOptions["allChangesForCluster"] = true
