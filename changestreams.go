@@ -319,13 +319,13 @@ func constructChangeStreamPipeline(pipeline interface{},
 	if options.FullDocument != "" {
 		changeStreamStageOptions["fullDocument"] = options.FullDocument
 	}
-	// resumeAfter and startAtOperationTime are mutually exclusive
+	// resumeAfter and startAtOperationTime are mutually exclusive but
+	// according to the spec validation should not be done at the driver level
 	if options.ResumeAfter != nil {
 		changeStreamStageOptions["resumeAfter"] = options.ResumeAfter
-	} else if options.StartAtOperationTime > 0 {
+	}
+	if options.StartAtOperationTime > 0 {
 		changeStreamStageOptions["startAtOperationTime"] = options.StartAtOperationTime
-		// reset StartAtOperationTime to ensure the resume token is used from now on
-		options.StartAtOperationTime = bson.MongoTimestamp(0)
 	}
 	if domain == changeDomainCluster {
 		changeStreamStageOptions["allChangesForCluster"] = true
@@ -372,6 +372,7 @@ func (changeStream *ChangeStream) resume() error {
 	opts := changeStream.options
 	if changeStream.resumeToken != nil {
 		opts.ResumeAfter = changeStream.resumeToken
+		opts.StartAtOperationTime = bson.MongoTimestamp(0)
 	}
 	// make a new pipeline containing the resume token.
 	changeStreamPipeline := constructChangeStreamPipeline(changeStream.pipeline, opts, changeStream.domainType)
