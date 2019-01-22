@@ -97,6 +97,7 @@ func (c *Collection) Watch(pipeline interface{},
 		options:     options,
 		pipeline:    pipeline,
 		domainType:  changeDomainCollection,
+		session:     c.Database.Session,
 	}, nil
 }
 
@@ -275,7 +276,7 @@ func (changeStream *ChangeStream) Close() error {
 		changeStream.err = err
 	}
 	if changeStream.sessionCopied {
-		changeStream.iter.session.Close()
+		changeStream.session.Close()
 		changeStream.sessionCopied = false
 	}
 	return err
@@ -342,7 +343,7 @@ func (changeStream *ChangeStream) resume() error {
 	// copy the information for the new socket.
 
 	// Thanks to Copy() future uses will acquire a new socket against the newly selected DB.
-	newSession := changeStream.iter.session.Copy()
+	newSession := changeStream.session.Copy()
 
 	// fetch the cursor from the iterator and use it to run a killCursors
 	// on the connection.
@@ -353,11 +354,19 @@ func (changeStream *ChangeStream) resume() error {
 		return err
 	}
 
-	// change out the old connection to the database with the new connection.
+	// Close the session if it has been copied
 	if changeStream.sessionCopied {
-		changeStream.collection.Database.Session.Close()
+		changeStream.session.Close()
 	}
-	changeStream.collection.Database.Session = newSession
+	// Assign the new session to the change stream
+	if changeStream.domainType == changeDomainCollection {
+		// Ensure collection session points to the new one
+		changeStream.collection.Database.Session = newSession
+	} else if changeStream.domainType == changeDomainDatabase {
+		// Ensure database session points to the new one
+		changeStream.database.Session = newSession
+	}
+	changeStream.session = newSession
 	changeStream.sessionCopied = true
 
 	opts := changeStream.options
