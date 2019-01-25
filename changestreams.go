@@ -66,6 +66,7 @@ type ChangeStreamOptions struct {
 }
 
 var errMissingResumeToken = errors.New("resume token missing from result")
+var iterTimeout = time.Duration(2) * time.Second
 
 // Watch constructs a new ChangeStream capable of receiving continuing data
 // from the database, it works at collection level.
@@ -93,7 +94,7 @@ func (c *Collection) Watch(pipeline interface{},
 		return nil, err
 	}
 
-	pIter.isChangeStream = true
+	pIter.timeout = iterTimeout
 	return &ChangeStream{
 		iter:        pIter,
 		collection:  c,
@@ -131,7 +132,7 @@ func (sess *Session) Watch(pipeline interface{},
 		return nil, err
 	}
 
-	pIter.isChangeStream = true
+	pIter.timeout = iterTimeout
 	return &ChangeStream{
 		iter:        pIter,
 		resumeToken: nil,
@@ -168,7 +169,7 @@ func (db *Database) Watch(pipeline interface{},
 		return nil, err
 	}
 
-	pIter.isChangeStream = true
+	pIter.timeout = iterTimeout
 	return &ChangeStream{
 		iter:        pIter,
 		resumeToken: nil,
@@ -400,7 +401,7 @@ func (changeStream *ChangeStream) resume() error {
 	if err := changeStream.iter.Err(); err != nil {
 		return err
 	}
-	changeStream.iter.isChangeStream = true
+	changeStream.iter.timeout = iterTimeout
 	return nil
 }
 
