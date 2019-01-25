@@ -17,12 +17,12 @@ type evNamespace struct {
 }
 
 type changeEvent struct {
-	ID                interface{}         `bson:"_id"`
-	OperationType     string              `bson:"operationType"`
-	FullDocument      *bson.Raw           `bson:"fullDocument,omitempty"`
-	Ns                evNamespace         `bson:"ns"`
-	DocumentKey       M                   `bson:"documentKey"`
-	UpdateDescription *updateDesc         `bson:"updateDescription,omitempty"`
+	ID                interface{} `bson:"_id"`
+	OperationType     string      `bson:"operationType"`
+	FullDocument      *bson.Raw   `bson:"fullDocument,omitempty"`
+	Ns                evNamespace `bson:"ns"`
+	DocumentKey       M           `bson:"documentKey"`
+	UpdateDescription *updateDesc `bson:"updateDescription,omitempty"`
 	ClusterTime       bson.MongoTimestamp `bson:"clusterTime,omitempty"`
 }
 
@@ -508,10 +508,10 @@ func (s *S) TestStreamsUpdateWithPipeline(c *C) {
 		err = coll.Insert(M{"_id": id2, "a": 2})
 		c.Assert(err, IsNil)
 
-		pipeline1 := []M{{"$match": M{"documentKey._id": id1}}}
+		pipeline1 := []M{M{"$match": M{"documentKey._id": id1}}}
 		changeStream1, err := w.Watch(pipeline1, mgo.ChangeStreamOptions{MaxAwaitTimeMS: 1500})
 		c.Assert(err, IsNil)
-		pipeline2 := []M{{"$match": M{"documentKey._id": id2}}}
+		pipeline2 := []M{M{"$match": M{"documentKey._id": id2}}}
 		changeStream2, err := w.Watch(pipeline2, mgo.ChangeStreamOptions{MaxAwaitTimeMS: 1500})
 		c.Assert(err, IsNil)
 

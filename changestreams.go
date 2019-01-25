@@ -302,10 +302,9 @@ func (changeStream *ChangeStream) ResumeToken() *bson.Raw {
 	return &tokenCopy
 }
 
-// Timeout returns true if the last call of Next returned false because of an iterator timeout
-// or there was no error.
+// Timeout returns true if the last call of Next returned false because of an iterator timeout.
 func (changeStream *ChangeStream) Timeout() bool {
-	return changeStream.iter.Err() == nil || changeStream.iter.Timeout()
+	return changeStream.iter.Timeout()
 }
 
 func constructChangeStreamPipeline(pipeline interface{},
