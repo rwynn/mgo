@@ -254,7 +254,9 @@ func (changeStream *ChangeStream) Next(result interface{}) bool {
 	// try to fetch the next result.
 	err = changeStream.fetchResultSet(result)
 	if err != nil {
-		changeStream.err = err
+		if err != ErrNotFound {
+			changeStream.err = err
+		}
 		return false
 	}
 
