@@ -36,7 +36,6 @@ type ChangeStream struct {
 	readPreference *ReadPreference
 	err            error
 	m              sync.Mutex
-	sessionCopied  bool
 	domainType     changeDomainType
 	session        *Session
 	database       *Database
@@ -247,6 +246,8 @@ func (changeStream *ChangeStream) Next(result interface{}) bool {
 		return false
 	}
 
+	// resume was ok so return a timeout to the client indicating
+	// it is ok to call Next again for results
 	changeStream.timedout = true
 	return false
 }
@@ -268,10 +269,6 @@ func (changeStream *ChangeStream) Close() error {
 	err := changeStream.iter.Close()
 	if err != nil {
 		changeStream.err = err
-	}
-	if changeStream.sessionCopied {
-		changeStream.session.Close()
-		changeStream.sessionCopied = false
 	}
 	return err
 }
@@ -343,24 +340,6 @@ func (changeStream *ChangeStream) resume() error {
 		return err
 	}
 
-	// Thanks to Copy() future uses will acquire a new socket against the newly selected DB.
-	newSession := changeStream.session.Copy()
-
-	// Close the session if it has been copied
-	if changeStream.sessionCopied {
-		changeStream.session.Close()
-	}
-	// Assign the new session to the change stream
-	if changeStream.domainType == changeDomainCollection {
-		// Ensure collection session points to the new one
-		changeStream.collection.Database.Session = newSession
-	} else if changeStream.domainType == changeDomainDatabase {
-		// Ensure database session points to the new one
-		changeStream.database.Session = newSession
-	}
-	changeStream.session = newSession
-	changeStream.sessionCopied = true
-
 	opts := changeStream.options
 	if changeStream.resumeToken != nil {
 		opts.ResumeAfter = changeStream.resumeToken
@@ -369,7 +348,7 @@ func (changeStream *ChangeStream) resume() error {
 	// make a new pipeline containing the resume token.
 	changeStreamPipeline := constructChangeStreamPipeline(changeStream.pipeline, opts, changeStream.domainType)
 
-	// generate the new iterator with the new connection.
+	// generate the new pipe
 	var newPipe *Pipe
 	if changeStream.domainType == changeDomainCollection {
 		newPipe = changeStream.collection.Pipe(changeStreamPipeline)
@@ -379,6 +358,7 @@ func (changeStream *ChangeStream) resume() error {
 		newPipe = changeStream.database.pipe(changeStreamPipeline)
 	}
 
+	// pipes internally create new socket connnections
 	changeStream.iter = newPipe.Iter()
 	if err := changeStream.iter.Err(); err != nil {
 		return err
