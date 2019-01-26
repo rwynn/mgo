@@ -227,6 +227,9 @@ func (s *S) TestStreamsNextNoEventTimeout(c *C) {
 		c.Assert(changeStream.Err(), IsNil)
 		c.Assert(changeStream.Timeout(), Equals, true)
 
+		err = changeStream.Close()
+		c.Assert(err, IsNil)
+
 		//test the same with default timeout (MaxTimeMS=1000)
 		//create the stream
 		changeStream, err = w.Watch(pipeline, mgo.ChangeStreamOptions{})
