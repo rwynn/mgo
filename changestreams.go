@@ -28,6 +28,7 @@ const (
 type ChangeStream struct {
 	iter           *Iter
 	isClosed       bool
+	timedout       bool
 	options        ChangeStreamOptions
 	pipeline       interface{}
 	resumeToken    *bson.Raw
@@ -66,7 +67,6 @@ type ChangeStreamOptions struct {
 }
 
 var errMissingResumeToken = errors.New("resume token missing from result")
-var iterTimeout = time.Duration(2) * time.Second
 
 // Watch constructs a new ChangeStream capable of receiving continuing data
 // from the database, it works at collection level.
@@ -94,7 +94,6 @@ func (c *Collection) Watch(pipeline interface{},
 		return nil, err
 	}
 
-	pIter.timeout = iterTimeout
 	return &ChangeStream{
 		iter:        pIter,
 		collection:  c,
@@ -132,7 +131,6 @@ func (sess *Session) Watch(pipeline interface{},
 		return nil, err
 	}
 
-	pIter.timeout = iterTimeout
 	return &ChangeStream{
 		iter:        pIter,
 		resumeToken: nil,
@@ -169,7 +167,6 @@ func (db *Database) Watch(pipeline interface{},
 		return nil, err
 	}
 
-	pIter.timeout = iterTimeout
 	return &ChangeStream{
 		iter:        pIter,
 		resumeToken: nil,
@@ -210,6 +207,8 @@ func (changeStream *ChangeStream) Next(result interface{}) bool {
 
 	defer changeStream.m.Unlock()
 
+	changeStream.timedout = false
+
 	// if we are in a state of error, then don't continue.
 	if changeStream.err != nil {
 		return false
@@ -225,14 +224,11 @@ func (changeStream *ChangeStream) Next(result interface{}) bool {
 	// attempt to fetch the change stream result.
 	err = changeStream.fetchResultSet(result)
 	if err == nil {
+		if changeStream.iter.Timeout() {
+			changeStream.timedout = true
+			return false
+		}
 		return true
-	}
-
-	// if we get no results we return false with no errors so the user can call Next
-	// again, resuming is not needed as the iterator is simply timed out as no events happened.
-	// The user will call Timeout in order to understand if this was the case.
-	if err == ErrNotFound {
-		return false
 	}
 
 	// check if the error is resumable
@@ -251,17 +247,8 @@ func (changeStream *ChangeStream) Next(result interface{}) bool {
 		return false
 	}
 
-	// we've successfully resumed the changestream.
-	// try to fetch the next result.
-	err = changeStream.fetchResultSet(result)
-	if err != nil {
-		if err != ErrNotFound {
-			changeStream.err = err
-		}
-		return false
-	}
-
-	return true
+	changeStream.timedout = true
+	return false
 }
 
 // Err returns nil if no errors happened during iteration, or the actual
@@ -304,7 +291,7 @@ func (changeStream *ChangeStream) ResumeToken() *bson.Raw {
 
 // Timeout returns true if the last call of Next returned false because of an iterator timeout.
 func (changeStream *ChangeStream) Timeout() bool {
-	return changeStream.iter.Timeout()
+	return changeStream.timedout
 }
 
 func constructChangeStreamPipeline(pipeline interface{},
@@ -350,19 +337,14 @@ func constructChangeStreamPipeline(pipeline interface{},
 }
 
 func (changeStream *ChangeStream) resume() error {
-	// copy the information for the new socket.
+
+	// Close and kill the cursor of the current iterator
+	if err := changeStream.iter.Close(); err != nil {
+		return err
+	}
 
 	// Thanks to Copy() future uses will acquire a new socket against the newly selected DB.
 	newSession := changeStream.session.Copy()
-
-	// fetch the cursor from the iterator and use it to run a killCursors
-	// on the connection.
-	cursorId := changeStream.iter.op.cursorId
-	err := runKillCursorsOnSession(newSession, cursorId)
-	if err != nil {
-		newSession.Close()
-		return err
-	}
 
 	// Close the session if it has been copied
 	if changeStream.sessionCopied {
@@ -401,7 +383,6 @@ func (changeStream *ChangeStream) resume() error {
 	if err := changeStream.iter.Err(); err != nil {
 		return err
 	}
-	changeStream.iter.timeout = iterTimeout
 	return nil
 }
 
@@ -454,18 +435,13 @@ func (changeStream *ChangeStream) fetchResultSet(result interface{}) error {
 }
 
 func isResumableError(err error) bool {
+	// if no results found we can try again
+	if err == ErrNotFound {
+		return true
+	}
 	_, isQueryError := err.(*QueryError)
 	// if it is not a database error OR it is a database error,
 	// but the error is a notMaster error
 	//and is not a missingResumeToken error (caused by the user provided pipeline)
 	return (!isQueryError || isNotMasterError(err)) && (err != errMissingResumeToken)
-}
-
-func runKillCursorsOnSession(session *Session, cursorId int64) error {
-	socket, err := session.acquireSocket(true)
-	if err != nil {
-		return err
-	}
-	defer socket.Release()
-	return socket.Query(&killCursorsOp{[]int64{cursorId}})
 }
