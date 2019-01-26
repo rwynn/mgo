@@ -338,13 +338,17 @@ func constructChangeStreamPipeline(pipeline interface{},
 
 func (changeStream *ChangeStream) resume() error {
 
-	// Close and kill the cursor of the current iterator
-	if err := changeStream.iter.Close(); err != nil {
-		return err
-	}
-
 	// Thanks to Copy() future uses will acquire a new socket against the newly selected DB.
 	newSession := changeStream.session.Copy()
+
+	// fetch the cursor from the iterator and use it to run a killCursors
+	// on the connection.
+	cursorId := changeStream.iter.op.cursorId
+	err := runKillCursorsOnSession(newSession, cursorId)
+	if err != nil {
+		newSession.Close()
+		return err
+	}
 
 	// Close the session if it has been copied
 	if changeStream.sessionCopied {
@@ -444,4 +448,13 @@ func isResumableError(err error) bool {
 	// but the error is a notMaster error
 	//and is not a missingResumeToken error (caused by the user provided pipeline)
 	return (!isQueryError || isNotMasterError(err)) && (err != errMissingResumeToken)
+}
+
+func runKillCursorsOnSession(session *Session, cursorId int64) error {
+	socket, err := session.acquireSocket(true)
+	if err != nil {
+		return err
+	}
+	defer socket.Release()
+	return socket.Query(&killCursorsOp{[]int64{cursorId}})
 }
