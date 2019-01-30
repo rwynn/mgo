@@ -358,6 +358,14 @@ func (changeStream *ChangeStream) resume() error {
 		newPipe = changeStream.database.pipe(changeStreamPipeline)
 	}
 
+	// apply any options set to the new pipe
+	if opts.MaxAwaitTimeMS > 0 {
+		newPipe.SetMaxTime(opts.MaxAwaitTimeMS)
+	}
+	if opts.BatchSize > 0 {
+		newPipe.Batch(opts.BatchSize)
+	}
+
 	// pipes internally create new socket connnections
 	changeStream.iter = newPipe.Iter()
 	if err := changeStream.iter.Err(); err != nil {
