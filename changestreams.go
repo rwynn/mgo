@@ -230,6 +230,16 @@ func (changeStream *ChangeStream) Next(result interface{}) bool {
 		return true
 	}
 
+	// if we get no results we return false with no errors so the user can call Next
+	// again, resuming is not needed as the iterator is simply timed out as no events happened.
+	// The user will call Timeout in order to understand if this was the case.
+	if err == ErrNotFound && changeStream.iter.op.cursorId != 0 {
+		// must reset error if cursor is to be reused
+		changeStream.iter.err = nil
+		changeStream.timedout = true
+		return false
+	}
+
 	// check if the error is resumable
 	if !isResumableError(err) {
 		// error is not resumable, give up and return it to the user.
@@ -423,10 +433,6 @@ func (changeStream *ChangeStream) fetchResultSet(result interface{}) error {
 }
 
 func isResumableError(err error) bool {
-	// if no results found we can try again
-	if err == ErrNotFound {
-		return true
-	}
 	_, isQueryError := err.(*QueryError)
 	// if it is not a database error OR it is a database error,
 	// but the error is a notMaster error
