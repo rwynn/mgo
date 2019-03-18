@@ -1,4 +1,4 @@
-module github.com/globalsign/mgo
+module github.com/rwynn/mgo
 
 require (
 	github.com/kr/pretty v0.1.0 // indirect
